@@ -1,6 +1,6 @@
 # Status
 
-_Last updated: 2026-09-16 — fork `BayleyBY/xml-fixer`, branch `master` (merge of `feature/trim-camera-originals`)._
+_Last updated: 2026-09-16 — fork `BayleyBY/republic-wash-and-cut`, branch `master` (merge of `feature/trim-camera-originals`)._
 
 ## Current build
 
