@@ -14,12 +14,11 @@ enum REDlineLocator {
     ]
 
     static func locate(userPath: URL?) -> URL? {
-        let fm = FileManager.default
-        if let userPath, fm.isExecutableFile(atPath: userPath.path) { return userPath }
-        if let saved = UserDefaults.standard.string(forKey: userDefaultsKey), fm.isExecutableFile(atPath: saved) {
+        if let userPath, ExternalTool.isRunnable(userPath.path) { return userPath }
+        if let saved = UserDefaults.standard.string(forKey: userDefaultsKey), ExternalTool.isRunnable(saved) {
             return URL(fileURLWithPath: saved)
         }
-        for path in defaultCandidates where fm.isExecutableFile(atPath: path) {
+        for path in defaultCandidates where ExternalTool.isRunnable(path) {
             return URL(fileURLWithPath: path)
         }
         return nil

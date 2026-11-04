@@ -286,7 +286,14 @@ final class TrimPlannerTests: XCTestCase {
         } else {
             XCTAssertNotNil(engine, "REDline is installed on this machine")
         }
-        XCTAssertNil(registry.engine(for: .mxf).engine)
+        // MXF depends on ART CMD the same way R3D depends on REDline.
+        let (mxfEngine, mxfReason) = registry.engine(for: .mxf)
+        if ARTCMDLocator.locate(userPath: nil) == nil {
+            XCTAssertNil(mxfEngine)
+            XCTAssertNotNil(mxfReason)
+        } else {
+            XCTAssertNotNil(mxfEngine, "ART CMD is installed on this machine")
+        }
         XCTAssertNotNil(registry.engine(for: .quickTime).engine)
     }
 

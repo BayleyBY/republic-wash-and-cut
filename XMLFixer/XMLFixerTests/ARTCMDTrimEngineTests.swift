@@ -22,6 +22,7 @@ final class ARTCMDTrimEngineTests: XCTestCase {
             "--start", "1800",
             "--duration", "9000",
             "--output", "/out/A_0001C001_261013_084123_a1CUY.mxf",
+            "--logpath", "",
         ])
     }
 
@@ -36,7 +37,7 @@ final class ARTCMDTrimEngineTests: XCTestCase {
         XCTAssertEqual(args[args.firstIndex(of: "--duration")! + 1], "1")
     }
 
-    func testProbeArgumentsExportMetadataOnlyForOneFrame() {
+    func testProbeArgumentsExportMetadataOnly() {
         let args = ARTCMDTrimEngine.probeArguments(
             input: URL(fileURLWithPath: "/media/clip.mxf"),
             outputJSON: URL(fileURLWithPath: "/tmp/probe/metadata.json")
@@ -44,8 +45,9 @@ final class ARTCMDTrimEngineTests: XCTestCase {
         XCTAssertEqual(args.first, "export")
         XCTAssertTrue(args.contains("--skip-audio"))
         XCTAssertTrue(args.contains("--skip-look"))
-        XCTAssertEqual(args[args.firstIndex(of: "--duration")! + 1], "1")
         XCTAssertEqual(args[args.firstIndex(of: "--output")! + 1], "/tmp/probe/metadata.json")
+        // No art.log in whatever directory the app happens to be running from.
+        XCTAssertEqual(args[args.firstIndex(of: "--logpath")! + 1], "")
     }
 
     func testCommandLineQuotesPathsWithSpaces() {
@@ -58,55 +60,92 @@ final class ARTCMDTrimEngineTests: XCTestCase {
 
     // MARK: - Metadata parsing
 
-    func testParseProbeJSONReadsCamelCaseKeys() throws {
-        let json = """
-        {
-          "staticMetadata": {
-            "cameraModel": "ARRI ALEXA 35",
-            "recordingFileFormat": "ARRIRAW",
-            "startTimecode": "08:41:23:00",
-            "projectFrameRate": 23.976,
-            "frameCount": 4512
-          }
-        }
-        """
-        let fields = ARTCMDTrimEngine.parseProbeJSON(Data(json.utf8))
-        XCTAssertEqual(fields.timecode, "08:41:23:00")
-        XCTAssertEqual(fields.fps ?? 0, 23.976, accuracy: 0.0001)
-        XCTAssertEqual(fields.frameCount, 4512)
-        XCTAssertEqual(fields.recordingFormat, "ARRIRAW")
+    /// Trimmed from a real ALEXA 35 ARRIRAW export (schema metadata_output/v2-2-0).
+    private let realExport = """
+    {
+      "arriJsonHeader": { "softwareVersion": "1.1.0" },
+      "clipBasedMetadataSets": [
+        { "metadataSetName": "Clip Info",
+          "metadataSetPayload": {
+            "clipDuration": 1,
+            "clipStartFrameNumber": 750729,
+            "videoCodec": "ARRIRAW uncompressed" } },
+        { "metadataSetName": "Project Rate",
+          "metadataSetPayload": { "dropframe": false, "timebase": "24000/1001" } }
+      ],
+      "frameBasedMetadata": {
+        "frames": [ { "frameBasedMetadataSets": {}, "frameNo": 0, "timecode": "08:41:59:11" } ]
+      }
+    }
+    """
+
+    func testParseProbeJSONReadsTheRealARRISchema() {
+        let fields = ARTCMDTrimEngine.parseProbeJSON(Data(realExport.utf8))
+        XCTAssertEqual(fields.timecode, "08:41:59:11")
+        XCTAssertEqual(fields.fps ?? 0, 24000.0 / 1001.0, accuracy: 0.0001)
+        XCTAssertFalse(fields.dropFrame)
+        XCTAssertEqual(fields.videoCodec, "ARRIRAW uncompressed")
     }
 
-    /// Keys are matched case-insensitively and ignoring spaces, underscores and hyphens, and numbers
-    /// written as strings still parse, since the manual does not pin the JSON's spelling down.
-    func testParseProbeJSONToleratesOtherSpellingsAndNesting() throws {
+    /// `--start N` exports one frame whose frameNo is 0 but whose timecode is that of frame N;
+    /// several frames must still resolve to the lowest frameNo.
+    func testParseProbeJSONTakesTheLowestFrameNumber() {
         let json = """
-        {
-          "clip": {
-            "Start Timecode": "10:00:00:12",
-            "sensor_fps": "24.000",
-            "frames": [ { "Total Frames": 240 } ]
-          }
-        }
+        { "frameBasedMetadata": { "frames": [
+            { "frameNo": 7, "timecode": "10:00:00:07" },
+            { "frameNo": 3, "timecode": "10:00:00:03" } ] } }
         """
-        let fields = ARTCMDTrimEngine.parseProbeJSON(Data(json.utf8))
-        XCTAssertEqual(fields.timecode, "10:00:00:12")
-        XCTAssertEqual(fields.fps ?? 0, 24.0, accuracy: 0.0001)
-        XCTAssertEqual(fields.frameCount, 240)
+        XCTAssertEqual(ARTCMDTrimEngine.parseProbeJSON(Data(json.utf8)).timecode, "10:00:00:03")
     }
 
-    func testParseProbeJSONIgnoresEndTimecodeAndBooleans() throws {
+    func testParseProbeJSONFallsBackToTheEssenceDescriptorRate() {
         let json = """
-        { "endTimecode": "09:00:00:00", "someFlag": true, "timecodeOfFirstFrame": "08:00:00:00" }
+        { "clipBasedMetadataSets": [
+            { "metadataSetName": "MXF Generic Data",
+              "metadataSetPayload": { "nativePictureEssenceDescriptor": {
+                  "file": { "sampleRate": "25/1" } } } } ] }
         """
-        let fields = ARTCMDTrimEngine.parseProbeJSON(Data(json.utf8))
-        XCTAssertEqual(fields.timecode, "08:00:00:00")
-        XCTAssertNil(fields.fps)
-        XCTAssertNil(fields.frameCount)
+        XCTAssertEqual(ARTCMDTrimEngine.parseProbeJSON(Data(json.utf8)).fps ?? 0, 25, accuracy: 0.0001)
+    }
+
+    func testRationalParsesRatesAndPlainNumbers() {
+        XCTAssertEqual(ARTCMDTrimEngine.rational("30000/1001") ?? 0, 29.97, accuracy: 0.001)
+        XCTAssertEqual(ARTCMDTrimEngine.rational("48") ?? 0, 48, accuracy: 0.0001)
+        XCTAssertEqual(ARTCMDTrimEngine.rational(NSNumber(value: 23.976)) ?? 0, 23.976, accuracy: 0.0001)
+        XCTAssertNil(ARTCMDTrimEngine.rational("24000/0"))
+        XCTAssertNil(ARTCMDTrimEngine.rational(NSNumber(value: true)))
+        XCTAssertNil(ARTCMDTrimEngine.rational(nil))
     }
 
     func testParseProbeJSONSurvivesGarbage() {
         XCTAssertEqual(ARTCMDTrimEngine.parseProbeJSON(Data("not json".utf8)), ARTCMDTrimEngine.ProbeFields())
+    }
+
+    /// The frame-count search depends on this exact refusal, so pin the message art-cmd 1.1.0 prints.
+    func testBeyondEndIsRecognisedFromTheToolsRefusal() {
+        let refusal = ExternalTool.Result(
+            exitCode: 1,
+            stdout: "No clip was processed: '--start 5702' lies beyond the end of every clip that could be set up",
+            stderr: ""
+        )
+        XCTAssertTrue(ARTCMDTrimEngine.isBeyondEnd(refusal))
+        XCTAssertFalse(ARTCMDTrimEngine.isBeyondEnd(ExternalTool.Result(exitCode: 0, stdout: "", stderr: "")))
+        XCTAssertFalse(ARTCMDTrimEngine.isBeyondEnd(ExternalTool.Result(exitCode: 1, stdout: "disk full", stderr: "")))
+    }
+
+    func testProbeArgumentsSeekWithoutStartForFrameZero() {
+        let first = ARTCMDTrimEngine.probeArguments(
+            input: URL(fileURLWithPath: "/media/clip.mxf"),
+            outputJSON: URL(fileURLWithPath: "/tmp/m.json")
+        )
+        XCTAssertFalse(first.contains("--start"))
+        let seek = ARTCMDTrimEngine.probeArguments(
+            input: URL(fileURLWithPath: "/media/clip.mxf"),
+            outputJSON: URL(fileURLWithPath: "/tmp/m.json"),
+            startFrame: 5701
+        )
+        XCTAssertEqual(seek[seek.firstIndex(of: "--start")! + 1], "5701")
+        XCTAssertEqual(seek[seek.firstIndex(of: "--duration")! + 1], "1")
     }
 
     // MARK: - Registry wiring
@@ -129,9 +168,18 @@ final class ARTCMDTrimEngineTests: XCTestCase {
         XCTAssertNil(registry.artcmd)
     }
 
-    func testLocatorPrefersAnExecutableUserPath() {
-        XCTAssertNil(ARTCMDLocator.locate(userPath: URL(fileURLWithPath: "/nonexistent/art-cmd")).flatMap {
-            $0.path == "/nonexistent/art-cmd" ? $0 : nil
-        })
+    /// ART CMD ships as a folder, so pointing at the folder must resolve to <folder>/bin/art-cmd.
+    func testLocatorResolvesAnInstallFolderToItsBinary() {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent("art-cmd-fake-\(UUID().uuidString)")
+        let bin = root.appendingPathComponent("bin")
+        try? fm.createDirectory(at: bin, withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        let binary = bin.appendingPathComponent("art-cmd")
+        fm.createFile(atPath: binary.path, contents: Data("#!/bin/sh\n".utf8), attributes: [.posixPermissions: 0o755])
+
+        XCTAssertEqual(ARTCMDLocator.resolve(root).path, binary.path)
+        XCTAssertEqual(ARTCMDLocator.resolve(binary).path, binary.path)
+        XCTAssertEqual(ARTCMDLocator.locate(userPath: root)?.path, binary.path)
     }
 }

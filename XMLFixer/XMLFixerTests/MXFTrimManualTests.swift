@@ -24,17 +24,26 @@ final class MXFTrimManualTests: XCTestCase {
         guard let artcmd = registry.artcmd else { throw XCTSkip("ART CMD not found") }
 
         let scanned = await FileScanner.scan(directory: options.sourceRoot!, extensionFilter: "mxf")
-        let stems = scanned.filter { $0.value.contains { $0.fileExtension == "mxf" } }.keys.sorted()
-        let stem = try XCTUnwrap(stems.first, "no MXF clips found")
-        let clip = try XCTUnwrap(scanned[stem]?.first { $0.fileExtension == "mxf" }?.url)
+        let candidates = scanned.values.flatMap { $0 }
+            .filter { $0.fileExtension == "mxf" }
+            .sorted { $0.fileSize < $1.fileSize }   // smallest clip that is long enough keeps the test quick
+        XCTAssertFalse(candidates.isEmpty, "no MXF clips found")
 
-        // Probe the real clip so the synthetic "edit" references its own timecode.
-        let probe = await artcmd.probe(url: clip, fallbackTimebase: 24)
-        print("MANUAL MXF probe:", clip.lastPathComponent,
-              "tb=\(probe.timebase) ntsc=\(probe.ntsc) frames=\(probe.frameCount)",
-              "tc=\(probe.startTimecode?.description ?? "-")", probe.notes)
-        let startTC = try XCTUnwrap(probe.startTimecode, "art-cmd reported no start timecode: \(probe.notes)")
-        try XCTSkipUnless(probe.frameCount > 120, "clip too short for a meaningful trim (\(probe.frameCount) frames)")
+        // Probe real clips so the synthetic "edit" references a real timecode; takes of a second or
+        // two are common on a shoot, so look for one with room to trim.
+        var found: (url: URL, probe: TrimSourceProbe)?
+        for candidate in candidates.prefix(10) {
+            let probe = await artcmd.probe(url: candidate.url, fallbackTimebase: 24)
+            print("MANUAL MXF probe:", candidate.url.lastPathComponent,
+                  "tb=\(probe.timebase) ntsc=\(probe.ntsc) frames=\(probe.frameCount)",
+                  "tc=\(probe.startTimecode?.description ?? "-")", probe.notes)
+            if probe.frameCount > 120, probe.startTimecode != nil {
+                found = (candidate.url, probe)
+                break
+            }
+        }
+        let (clip, probe) = try XCTUnwrap(found, "no clip longer than 120 frames with a timecode")
+        let startTC = try XCTUnwrap(probe.startTimecode)
 
         // One used range, 48 frames in from the head, so in and out both differ from the original.
         var summary = MediaUsageSummary(

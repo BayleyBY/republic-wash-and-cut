@@ -24,7 +24,7 @@ A **Trim** toolbar action that matches every source used across the loaded XMLs 
 | QuickTime ProRes / DNx / H.264 / HEVC (.mov, .mp4) | AVFoundation passthrough, keyframe snap-outward, new `tmcd` track | Verified on synthetic and ffmpeg-generated media with audio |
 | Image sequences (.exr, .dpx, .dng, .ari, .tif, .png …) | Per-frame file copies | Verified on synthetic sequences |
 | RED .R3D (single or split segments in `.RDC`) | REDline `--format 102` (R3D Trim) when installed | Verified on real V-RAPTOR 8K footage (build 65.2.1) |
-| ARRI MXF (ARRIRAW, HDE, ARRICORE, MXF/ProRes) | ARRI `art-cmd copy --start/--duration` when installed | Built against the ART CMD 1.1.0 manual; **unverified on real media** |
+| ARRI MXF (ARRIRAW, HDE, ARRICORE, MXF/ProRes) | ARRI `art-cmd copy --start/--duration` when installed | Verified on real ALEXA 35 ARRIRAW (ART CMD 1.1.0): `art-cmd verify` finds no checksum differences |
 | BRAW, non-ARRI MXF, stills, other | Copied whole and flagged | By design for now |
 
 Key behaviours:
@@ -41,7 +41,8 @@ Key behaviours:
 
 ## Known limitations / open items
 - **MP4 outputs carry no timecode track** (the container cannot hold `tmcd`); reported per file. MOV outputs are fine.
-- **ARRI MXF trimming is unverified.** `ARTCMDTrimEngine` is written from the ART CMD 1.1.0 manual but has never run: ART CMD is not installed here. Open questions are the metadata JSON's real key names (the parser guesses from several candidates) and whether a trimmed clip's start timecode reflects the new in-point. Run `TEST_RUNNER_XMLFIXER_MXF_DIR=/path … test` with the tool installed. Non-ARRI MXF stays copy-whole.
+- **Non-ARRI MXF (Sony/Canon XAVC, AVC-Intra) is still copied whole.** `art-cmd` only reads ARRI clips; anything it cannot open falls back to copy-whole with a reason.
+- **ART CMD must be installed separately** (free from ARRI, a portable folder — this machine has it at `/Applications/ART_CMD`). The app finds it there or via the **Locate...** button, and the DMG does not bundle it.
 - **REDline is the Intel build** (runs under Rosetta). Irrelevant for trimming, which is a frame-range copy; an Apple Silicon build would only matter for transcodes.
 - `--trimAudio` is passed to REDline but the test footage had no camera audio, so audio-in-R3D is unexercised.
 - R3D copy-whole fallback copies every segment but not `.rtn` / `ascmhl` sidecars.
@@ -58,5 +59,5 @@ Key behaviours:
 ## Next steps (suggested)
 1. Optional: rewrite loaded XMLs / Sources XML to point at trimmed files with recomputed in/out and start TC.
 2. Copy RED sidecars alongside copy-whole and trimmed clips.
-3. Verify `ARTCMDTrimEngine` against real ARRI MXF once ART CMD is installed (`MXFTrimManualTests`).
+3. Exercise ARRI MXF trimming through the UI on a real conform (the engine is verified by `MXFTrimManualTests`, not yet by a full XML-driven run).
 4. Upstream pull request from `feature/trim-camera-originals` (drop the `chore: bump build` commit first).
