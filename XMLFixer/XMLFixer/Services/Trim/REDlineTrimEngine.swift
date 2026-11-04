@@ -161,32 +161,10 @@ struct REDlineTrimEngine: TrimEngine {
 
     // MARK: - Process execution
 
-    struct ProcessResult {
-        let exitCode: Int32
-        let stdout: String
-        let stderr: String
-    }
+    typealias ProcessResult = ExternalTool.Result
 
     static func run(executable: URL, arguments: [String]) async throws -> ProcessResult {
-        try await withCheckedThrowingContinuation { continuation in
-            let process = Process()
-            process.executableURL = executable
-            process.arguments = arguments
-            let outPipe = Pipe()
-            let errPipe = Pipe()
-            process.standardOutput = outPipe
-            process.standardError = errPipe
-            process.terminationHandler = { proc in
-                let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
-                continuation.resume(returning: ProcessResult(exitCode: proc.terminationStatus, stdout: out, stderr: err))
-            }
-            do {
-                try process.run()
-            } catch {
-                continuation.resume(throwing: TrimEngineError.toolFailed("Could not launch REDline: \(error.localizedDescription)"))
-            }
-        }
+        try await ExternalTool.run(executable: executable, arguments: arguments, toolName: "REDline")
     }
 
     // MARK: - Probe

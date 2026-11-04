@@ -124,7 +124,18 @@ enum TrimPlanner {
                 return
             }
             probe = await redline.probe(url: candidate.url, fallbackTimebase: item.xmlTimebase)
-        case .mxf, .stillImage, .unsupported:
+        case .mxf:
+            guard let artcmd = registry.artcmd else {
+                item.status = .copyWhole(reason ?? "ART CMD unavailable")
+                return
+            }
+            probe = await artcmd.probe(url: candidate.url, fallbackTimebase: item.xmlTimebase)
+            if probe.frameCount == 0 && probe.startTimecode == nil {
+                // Not an ARRI MXF, or art-cmd could not read it: copying whole beats a bad trim.
+                item.status = .copyWhole("art-cmd could not read this MXF")
+                return
+            }
+        case .stillImage, .unsupported:
             item.status = .copyWhole(reason ?? "Unsupported")
             return
         }

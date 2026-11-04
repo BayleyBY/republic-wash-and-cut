@@ -12,6 +12,7 @@ struct TrimMediaSheet: View {
     @State private var mirrorFolders = true
     @State private var overwriteExisting = false
     @State private var redlinePath: URL? = UserDefaults.standard.string(forKey: REDlineLocator.userDefaultsKey).map { URL(fileURLWithPath: $0) }
+    @State private var artcmdPath: URL? = UserDefaults.standard.string(forKey: ARTCMDLocator.userDefaultsKey).map { URL(fileURLWithPath: $0) }
 
     @State private var rawSummaries: [MediaUsageSummary] = []
     @State private var scannedFiles: [String: [ScannedFile]] = [:]
@@ -34,7 +35,8 @@ struct TrimMediaSheet: View {
             overwriteExisting: overwriteExisting,
             handles: appState.sourcesExportOptions.handles,
             mergeThreshold: appState.sourcesExportOptions.mergeThreshold,
-            redlinePath: redlinePath
+            redlinePath: redlinePath,
+            artcmdPath: artcmdPath
         )
     }
 
@@ -122,6 +124,7 @@ struct TrimMediaSheet: View {
         .onChange(of: appState.sourcesExportOptions.handles) { rebuildPlan() }
         .onChange(of: appState.sourcesExportOptions.mergeThreshold) { rebuildPlan() }
         .onChange(of: redlinePath) { rebuildPlan() }
+        .onChange(of: artcmdPath) { rebuildPlan() }
     }
 
     // MARK: - Sections
@@ -190,6 +193,7 @@ struct TrimMediaSheet: View {
                     Toggle("Overwrite existing files", isOn: $overwriteExisting)
                         .toggleStyle(.checkbox)
                     redlineRow
+                    artcmdRow
                 }
                 .frame(width: 330, alignment: .leading)
             }
@@ -219,6 +223,33 @@ struct TrimMediaSheet: View {
             }
             Spacer()
             Button("Locate...") { locateREDline() }
+                .controlSize(.small)
+                .disabled(AppSandbox.isSandboxed)
+        }
+    }
+
+    private var artcmdRow: some View {
+        HStack(spacing: 6) {
+            let located = AppSandbox.isSandboxed ? nil : ARTCMDLocator.locate(userPath: artcmdPath)
+            Image(systemName: located != nil ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                .foregroundStyle(located != nil ? .green : .orange)
+            if AppSandbox.isSandboxed {
+                Text("ARRI MXF trimming unavailable in the sandboxed build")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } else if let located {
+                Text("ART CMD: \(located.path)")
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                    .help(located.path)
+            } else {
+                Text("ART CMD not found (MXF will be copied whole)")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer()
+            Button("Locate...") { locateARTCMD() }
                 .controlSize(.small)
                 .disabled(AppSandbox.isSandboxed)
         }
@@ -366,6 +397,22 @@ struct TrimMediaSheet: View {
             guard response == .OK, let url = panel.url else { return }
             redlinePath = url
             UserDefaults.standard.set(url.path, forKey: REDlineLocator.userDefaultsKey)
+        }
+    }
+
+    private func locateARTCMD() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = false
+        panel.canChooseFiles = true
+        panel.allowsMultipleSelection = false
+        panel.showsHiddenFiles = true
+        panel.treatsFilePackagesAsDirectories = true
+        panel.message = "Select the art-cmd executable (ARRI Reference Tool, command line)"
+        panel.prompt = "Use ART CMD"
+        panel.begin { response in
+            guard response == .OK, let url = panel.url else { return }
+            artcmdPath = url
+            UserDefaults.standard.set(url.path, forKey: ARTCMDLocator.userDefaultsKey)
         }
     }
 

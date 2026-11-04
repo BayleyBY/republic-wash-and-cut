@@ -59,6 +59,39 @@ enum AppSandbox {
     }
 }
 
+// MARK: - External command-line tools
+
+/// Runs a vendor CLI (REDline, art-cmd) and collects its output.
+enum ExternalTool {
+    struct Result {
+        let exitCode: Int32
+        let stdout: String
+        let stderr: String
+    }
+
+    static func run(executable: URL, arguments: [String], toolName: String) async throws -> Result {
+        try await withCheckedThrowingContinuation { continuation in
+            let process = Process()
+            process.executableURL = executable
+            process.arguments = arguments
+            let outPipe = Pipe()
+            let errPipe = Pipe()
+            process.standardOutput = outPipe
+            process.standardError = errPipe
+            process.terminationHandler = { proc in
+                let out = String(data: outPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                let err = String(data: errPipe.fileHandleForReading.readDataToEndOfFile(), encoding: .utf8) ?? ""
+                continuation.resume(returning: Result(exitCode: proc.terminationStatus, stdout: out, stderr: err))
+            }
+            do {
+                try process.run()
+            } catch {
+                continuation.resume(throwing: TrimEngineError.toolFailed("Could not launch \(toolName): \(error.localizedDescription)"))
+            }
+        }
+    }
+}
+
 // MARK: - Naming & paths shared by engines
 
 enum TrimNaming {
@@ -101,6 +134,7 @@ struct TrimEngineRegistry {
     let quickTime: QuickTimeTrimEngine
     let imageSequence: ImageSequenceTrimEngine
     let redline: REDlineTrimEngine?
+    let artcmd: ARTCMDTrimEngine?
 
     init(options: TrimOptions, sandboxed: Bool = AppSandbox.isSandboxed) {
         quickTime = QuickTimeTrimEngine()
@@ -109,6 +143,11 @@ struct TrimEngineRegistry {
             redline = REDlineTrimEngine(executable: exe)
         } else {
             redline = nil
+        }
+        if !sandboxed, let exe = ARTCMDLocator.locate(userPath: options.artcmdPath) {
+            artcmd = ARTCMDTrimEngine(executable: exe)
+        } else {
+            artcmd = nil
         }
     }
 
@@ -125,7 +164,11 @@ struct TrimEngineRegistry {
                     ? "R3D trimming needs REDline, which is unavailable in the sandboxed build"
                     : "REDline not found — install REDCINE-X Pro or set the REDline path")
         case .mxf:
-            return (nil, "MXF cannot be rewritten by AVFoundation")
+            // AVFoundation cannot write MXF; ARRI's art-cmd can trim ARRI MXF losslessly.
+            if let artcmd { return (artcmd, nil) }
+            return (nil, AppSandbox.isSandboxed
+                    ? "MXF trimming needs ARRI ART CMD, which is unavailable in the sandboxed build"
+                    : "ART CMD not found — install ARRI ART CMD or set its path (non-ARRI MXF is copied whole)")
         case .stillImage:
             return (nil, "Still image")
         case .unsupported:
