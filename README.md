@@ -87,8 +87,11 @@ trimmed copies containing only the used ranges plus handles.
   folders) are trimmed with REDline when REDCINE-X Pro is installed (a
   **Locate...** button lets you point at the executable). Output follows RED's
   `<clip>.RDC/<clip>_001.R3D` layout with audio, absolute and edge timecode, and
-  reel ID preserved. Without REDline, and for ARRIRAW MXF, BRAW, and other formats
-  with no lossless trimmer, the whole clip is copied and flagged.
+  reel ID preserved.
+- ARRI `.mxf` clips (ARRIRAW, HDE, ARRICORE, MXF/ProRes) are trimmed with ARRI's
+  ART CMD command-line tool when it is installed, which also has a **Locate...**
+  button. Without either tool, and for BRAW, non-ARRI MXF, and other formats with
+  no lossless trimmer, the whole clip is copied and flagged.
 - Output keeps the original filename and mirrors the folder structure under the
   destination. When a source has several used ranges farther apart than the
   merge gap, they become `name_trim01.ext`, `name_trim02.ext`, and so on.

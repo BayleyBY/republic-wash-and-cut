@@ -260,6 +260,7 @@ struct TrimOptions {
     var handles: Int = 10
     var mergeThreshold: Int = 0
     var redlinePath: URL? = nil
+    var artcmdPath: URL? = nil
 }
 
 enum TrimResultStatus: Equatable {
