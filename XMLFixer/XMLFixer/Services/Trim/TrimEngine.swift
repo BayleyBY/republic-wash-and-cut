@@ -69,6 +69,15 @@ enum ExternalTool {
         let stderr: String
     }
 
+    /// A runnable binary: `isExecutableFile` alone also says yes to directories, which have the
+    /// execute bit, so an install folder would otherwise pass as its own tool.
+    static func isRunnable(_ path: String) -> Bool {
+        var isDirectory: ObjCBool = false
+        let fm = FileManager.default
+        guard fm.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else { return false }
+        return fm.isExecutableFile(atPath: path)
+    }
+
     static func run(executable: URL, arguments: [String], toolName: String) async throws -> Result {
         try await withCheckedThrowingContinuation { continuation in
             let process = Process()
