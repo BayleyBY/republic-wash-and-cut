@@ -6,8 +6,8 @@ _Last updated: 2026-09-16 — fork `BayleyBY/republic-wash-and-cut`, branch `mas
 
 | Item | Value |
 | --- | --- |
-| Build label | `V013-sources` (`XMLFixerApp.buildVersion`) |
-| Marketing / bundle version | 1.2.0 / 13 |
+| Build label | `V014-mxf` (`XMLFixerApp.buildVersion`) |
+| Marketing / bundle version | 1.3.0 / 14 |
 | Upstream base | `dr1pvfx/xml-fixer` @ `82a54c4` (V011, 1.0.0 alpha 1) |
 | Toolchain verified | Xcode 26.6, macOS 26.5, XcodeGen 2.46 |
 | Test suite | 58 XCTest cases passing (plus 2 opt-in manual tests) |

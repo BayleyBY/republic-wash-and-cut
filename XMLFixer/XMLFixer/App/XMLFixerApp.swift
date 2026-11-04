@@ -4,7 +4,7 @@ import SwiftUI
 struct XMLFixerApp: App {
     @State private var appState = AppState()
 
-    static let buildVersion = "V013-sources"
+    static let buildVersion = "V014-mxf"
     static let appVersion: String = {
         Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "?"
     }()
